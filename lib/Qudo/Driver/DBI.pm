@@ -587,6 +587,39 @@ sub _build_insert_sql{
     return $sql;
 }
 
-1;
+sub func_from_name {
+    my ($self, $funcname) = @_;
 
+    my $result;
+    while ( ! $result ) {
+        my $sth = $self->_execute(q{
+            SELECT id, name FROM func WHERE name = ? LIMIT 1
+        }, [$funcname]);
+        my $couner = 0;
+        while ( my $row = $sth->fetchrow_hashref() ) {
+            $result = $row;
+        }
+        if ( ! $result ) {
+            $self->_execute(q{
+                INSERT INTO func (name) VALUSE (?)
+            }, [ $funcname ]);
+        }
+    }
+    return $result;
+}
+
+sub func_from_id {
+    my ($self, $funcid) = @_;
+    my $result;
+    my $sth = $self->_execute(q{
+        SELECT id, name FROM func WHERE id = ? LIMIT 1
+    }, [$funcid]);
+    my $couner = 0;
+    while ( my $row = $sth->fetchrow_hashref() ) {
+        $result = $row;
+    }
+    return $result;
+}
+
+1;
 
