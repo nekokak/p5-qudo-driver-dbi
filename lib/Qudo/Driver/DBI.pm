@@ -601,7 +601,7 @@ sub func_from_name {
         }
         if ( ! $result ) {
             $self->_execute(q{
-                INSERT INTO func (name) VALUSE (?)
+                INSERT INTO func (name) VALUES (?)
             }, [ $funcname ]);
         }
     }
