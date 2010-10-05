@@ -8,6 +8,7 @@ requires 'DBI';
 build_requires 'Test::More';
 build_requires 'Test::Output';
 build_requires 'Test::Requires';
+build_requires 'Class::Inspector';
 auto_include;
 
 tests 't/*.t t/*/*.t t/*/*/*.t';
