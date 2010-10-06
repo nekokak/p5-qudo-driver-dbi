@@ -226,7 +226,7 @@ sub lookup_job {
     }
 
     # limit
-    $sql .= q{LIMIT 1};
+    $sql .= q{ LIMIT 1};
 
     my $sth = $self->{dbh}->prepare( $sql );
 
@@ -241,7 +241,7 @@ sub lookup_job {
 }
 
 sub find_job {
-    my ($self, $limit, $func_map) = @_;
+    my ($self, $limit, $func_ids) = @_;
 
     my $sql = $self->_search_job_sql();
     $sql .= q{
@@ -254,10 +254,9 @@ sub find_job {
     push @bind, $self->get_server_time;
 
     # func.name
-    if( $func_map ){
-        my $keys = [keys %$func_map];
-        $sql .= q{ AND }. $self->_join_func_name($keys);
-        push @bind , @{$keys};
+    if( $func_ids ){
+        $sql .= q{ AND }. $self->_join_func_ids($func_ids);
+        push @bind , @{$func_ids};
     }
 
     # priority
@@ -288,11 +287,8 @@ sub _search_job_sql {
             job.func_id AS func_id,
             job.grabbed_until AS grabbed_until,
             job.retry_cnt AS retry_cnt,
-            job.priority AS priority,
-            func.name AS funcname
+            job.priority AS priority
         FROM job
-        INNER JOIN
-            func ON job.func_id = func.id
     };
 }
 
@@ -308,7 +304,6 @@ sub _get_job_data {
                 job_retry_cnt     => $row->{retry_cnt},
                 job_priority      => $row->{priority},
                 func_id           => $row->{func_id},
-                func_name         => $row->{funcname},
             };
         }
         return;
@@ -562,6 +557,17 @@ sub _execute {
     };
     if ($@) { croak $@ }
     $sth;
+}
+
+sub _join_func_ids{
+    my ($self , $func_ids ) = @_;
+
+    my $func_in_sql = sprintf(
+        q{ job.func_id IN (%s) } ,
+        join(',', map { '?' } @{$func_ids} )
+    );
+
+    return $func_in_sql;
 }
 
 sub _join_func_name{
