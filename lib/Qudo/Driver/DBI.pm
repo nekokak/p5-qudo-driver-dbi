@@ -36,6 +36,12 @@ sub _connect {
     );
 }
 
+sub dbh{
+    my $self = shift;
+
+    return $self->{dbh};
+}
+
 sub job_status_list {
     my ($self, $args) = @_;
 
@@ -86,26 +92,35 @@ sub job_status_list {
 sub job_count {
     my ($self , $funcs) = @_;
 
+    my @bind;
+    if( ref $funcs eq 'ARRAY' ){
+        @bind = @{$funcs};
+    }
+    elsif( defined $funcs ){
+        push @bind , $funcs;
+    }
+
     my $sql = q{
         SELECT
             COUNT(job.id) AS count
         FROM
-            job, func
-        WHERE
-            job.func_id = func.id
+            job
     };
-    if( $funcs ){
-        $sql .= q{ AND }. $self->_join_func_name($funcs);
+
+    if( scalar @bind ){
+        $sql .= q{
+            INNER JOIN
+                func ON job.func_id = func.id
+            WHERE
+        };
+        $sql .= $self->_join_func_name( \@bind );
     }
 
-    my $sth = $self->{dbh}->prepare( $sql );
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
 
-    eval{
-        $sth->execute( @{$funcs} );
-    };
-    if( my $e =  $@ ){
-        croak 'job_count ERROR'.$e;
-    }
     my $ret = $sth->fetchrow_hashref();
     return $ret->{count};
 }
@@ -133,14 +148,10 @@ sub job_list {
     $sql .= q{LIMIT ?};
     push @bind , $limit;
 
-    my $sth = $self->{dbh}->prepare( $sql );
-
-    eval{
-        $sth->execute( @bind );
-    };
-    if( my $e =  $@ ){
-        croak 'job_list ERROR'.$e;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
 
     my $code = $self->_get_job_data( $sth );
 
@@ -198,13 +209,11 @@ sub exception_list {
         push @bind , $offset;
     }
 
-    my $sth = $self->{dbh}->prepare( $sql );
-    eval{
-        $sth->execute( @bind );
-    };
-    if( my $e =  $@ ){
-        croak 'exception_list ERROR'.$e;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
+
     my @exception_list;
     while (my $row = $sth->fetchrow_hashref) {
         push @exception_list, $row;
@@ -228,14 +237,10 @@ sub lookup_job {
     # limit
     $sql .= q{ LIMIT 1};
 
-    my $sth = $self->{dbh}->prepare( $sql );
-
-    eval{
-        $sth->execute( @bind );
-    };
-    if( my $e =  $@ ){
-        croak 'lookup_job ERROR'.$e;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
 
     return $self->_get_job_data( $sth );
 }
@@ -266,14 +271,10 @@ sub find_job {
     $sql .= q{ LIMIT ? };
     push @bind , $limit;
 
-    my $sth = $self->{dbh}->prepare( $sql );
-
-    eval{
-        $sth->execute( @bind );
-    };
-    if( my $e =  $@ ){
-        croak 'find_job ERROR'.$e;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
 
     return $self->_get_job_data( $sth );
 }
@@ -313,60 +314,54 @@ sub _get_job_data {
 sub grab_a_job {
     my ($self, %args) = @_;
 
-    my $sth = $self->{dbh}->prepare(
-        q{
-            UPDATE
-                job
-            SET
-                grabbed_until = ?
-            WHERE
-                id = ?
-            AND
-                grabbed_until = ?
-        }
+    my $sql = q{
+        UPDATE
+            job
+        SET
+            grabbed_until = ?
+        WHERE
+            id = ?
+        AND
+            grabbed_until = ?
+    };
+
+    my @bind = (
+        $args{grabbed_until},
+        $args{job_id},
+        $args{old_grabbed_until},
     );
 
-    my $rows;
-    eval{
-        $rows = $sth->execute(
-            $args{grabbed_until},
-            $args{job_id},
-            $args{old_grabbed_until},
-        );
-    };
-    if( my $e =  $@ ){
-        croak 'grab_a_job ERROR'.$e;
-        return;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
 
-    return $rows;
+    return $sth->rows;
 }
 
 sub logging_exception {
     my ($self, $args) = @_;
 
-    my $sth = $self->{dbh}->prepare(
-        q{
-            INSERT INTO exception_log
-                ( func_id , message , uniqkey, arg, exception_time, retried)
-            VALUES
-                ( ? , ? , ?, ?, ?, ?)
-        }
+    my $sql = q{
+        INSERT INTO exception_log
+            ( func_id , message , uniqkey, arg, exception_time, retried)
+        VALUES
+            ( ? , ? , ?, ?, ?, ?)
+    };
+    my @bind = (
+        $args->{func_id} ,
+        $args->{message} ,
+        $args->{uniqkey} ,
+        $args->{arg} ,
+        time(),
+        0,
     );
 
-    eval{
-        $sth->execute(
-            $args->{func_id} , 
-            $args->{message} , 
-            $args->{uniqkey} , 
-            $args->{arg} , 
-            time(),
-            0,
-        );
-    };
-    if( my $e =  $@ ){
-        croak 'logging_exception ERROR'.$e;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
+
     return;
 }
 
@@ -415,22 +410,20 @@ sub enqueue {
         'job',
         \@column
     );
-
-    my $sth_ins = $self->{dbh}->prepare( $sql );
     my @bind = map {$args->{$_}} @column;
-    eval{
-        $sth_ins->execute( @bind );
-    };
-    if( $@ ){
-        croak 'enqueue ERROR'.$@;
-    }
 
-    my $id = $self->{dbd}->last_insert_id($self->{dbh}, $sth_ins);
-    my $sth_sel = $self->{dbh}->prepare(
-        q{SELECT * FROM job WHERE id = ?}
+    my $sth_ins = $self->_execute(
+        $sql,
+        \@bind
     );
 
-    $sth_sel->execute( $id );
+
+    my $id = $self->{dbd}->last_insert_id($self->{dbh}, $sth_ins);
+    my $sth_sel = $self->_execute(
+        q{SELECT * FROM job WHERE id = ?} ,
+        [ $id ]
+    );
+
     my $ret_sel = $sth_sel->fetchrow_hashref();
     return $ret_sel ? $ret_sel->{id} : undef;
 }
@@ -438,80 +431,66 @@ sub enqueue {
 sub reenqueue {
     my ($self, $job_id, $args) = @_;
 
-    my $sth = $self->{dbh}->prepare(
-        q{
-            UPDATE
-                job
-            SET
-                enqueue_time  = ?,
-                run_after     = ?,
-                retry_cnt     = ?,
-                grabbed_until = ?
-            WHERE
-                id = ?
-        }
+    my $sql = q{
+        UPDATE
+            job
+        SET
+            enqueue_time  = ?,
+            run_after     = ?,
+            retry_cnt     = ?,
+            grabbed_until = ?
+        WHERE
+            id = ?
+    };
+
+    my @bind = (
+        time,
+        (time + ($args->{retry_delay}||0) ),
+        $args->{retry_cnt},
+        $args->{grabbed_until},
+        $job_id,
     );
 
-    my $row;
-    eval{
-        $row = $sth->execute(
-            time,
-            (time + ($args->{retry_delay}||0) ),
-            $args->{retry_cnt},
-            $args->{grabbed_until},
-            $job_id,
-        );
-    };
-    if( my $e =  $@ ){
-        croak 'reenqueue ERROR'.$e;
-        return;
-    }
+    my $sth = $self->_execute(
+        $sql,
+        \@bind
+    );
 
-    return $row;
+    return $sth->rows;
 }
 
 
 sub dequeue {
     my ($self, $args) = @_;
-    my $sth = $self->{dbh}->prepare(
-        q{DELETE FROM  job WHERE id = ?}
+
+    my $sth = $self->_execute(
+        q{DELETE FROM job WHERE id = ?} ,
+        [ $args->{id} ]
     );
 
-    my $row;
-    eval{
-        $row = $sth->execute( $args->{id} );
-    };
-    if( my $e = $@ ){
-        croak 'dequeue ERROR'.$e;
-    }
-
-    return $row;
+    return $sth->rows;
 }
 
 
 sub get_func_id {
     my ($self, $funcname) = @_;
     
-    my $sth_sel = $self->{dbh}->prepare(
-        q{SELECT * FROM func WHERE name = ?}
+    my $sth_sel = $self->_execute(
+        q{SELECT * FROM func WHERE name = ?} ,
+        [ $funcname ]
     );
 
-    $sth_sel->execute( $funcname );
     my $func_id;
     my $ret_hashref = $sth_sel->fetchrow_hashref();
     if ( $ret_hashref ){
         $func_id =  $ret_hashref->{id};
     }
     else{
-        my $sth_ins = $self->{dbh}->prepare(
-            q{INSERT INTO func ( name ) VALUES ( ? )}
+        my $sth_ins = $self->_execute(
+            q{INSERT INTO func ( name ) VALUES ( ? )} ,
+            [ $funcname ]
         );
-        eval{
-            $sth_ins->execute( $funcname );
-        };
-        if( my $e = $@ ){
-            croak $e;
-        }
+
         $sth_sel->execute( $funcname );
         my $ret_hashref = $sth_sel->fetchrow_hashref();
         if ( $ret_hashref ){
@@ -525,14 +504,10 @@ sub get_func_id {
 sub get_func_name {
     my ($self, $funcid) = @_;
 
-    my $sth;
-    eval {
-        $sth = $self->{dbh}->prepare(
-            q{SELECT * FROM func WHERE id = ?}
-        );
-        $sth->execute( $funcid );
-    };
-    if ($@) { croak $@ }
+    my $sth = $self->_execute(
+        q{SELECT * FROM func WHERE id = ?} ,
+        [ $funcid ]
+    );
 
     my $ret_hashref = $sth->fetchrow_hashref();
     return $ret_hashref ? $ret_hashref->{name} : undef;
