@@ -2,6 +2,7 @@ use inc::Module::Install;
 name 'Qudo-Driver-DBI';
 all_from 'lib/Qudo/Driver/DBI.pm';
 
+requires 'Carp';
 requires 'Qudo';
 requires 'DBI';
 

@@ -604,3 +604,61 @@ sub func_from_id {
 
 1;
 
+__END__
+
+=head1 NAME
+
+Qudo::Driver::DBI - Yet another driver module for Qudo
+
+=head1 SYNOPSIS
+
+    use Qudo;
+    my $qudo = Qudo->new(
+        driver_class => 'DBI',
+        databases => [+{
+            dsn      => 'dbi:mysql:qudo',
+            username => 'root',
+            password => '',
+        }],
+    );
+    $qudo->enqueue("MyApp::Worker::Sample", { arg => $arg });
+
+=head1 DESCRIPTION
+
+Qudo is simple and extensible job queue manager.
+It use DBIx::Skinny as driver dlass to connect DB.
+
+This module provide another DB driver class for Qudo.
+
+Qudo::Driver::DBI depends on only DBI module.
+
+=head1 METHODS
+
+This module make synchronization with Qudo::Driver::Skinny's methods a mission.
+So Qudo::Driver::Skinny's methods equal to this module's methods.
+
+=head1 REPOS
+
+    http://github.com/nekokak/p5-qudo-driver-dbi/tree/master
+
+=head1 AUTHOR
+
+Masaru Hoshino <masartz _at_ gmail dot com>
+
+Atsushi Kobayashi <nekokak _at_ gmail dot com>
+
+Keiji Yoshimi <walf443 _at_ gmail dot com>
+
+=head1 SEE ALSO
+
+L<Qudo>
+
+=head1 COPYRIGHT
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+The full text of the license can be found in the
+LICENSE file included with this module.
+
+=cut
